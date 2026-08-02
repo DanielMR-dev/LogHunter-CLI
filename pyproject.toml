@@ -1,19 +1,28 @@
 [project]
 name = "loghunter-cli"
 version = "0.1.0"
-description = "Add your description here"
+description = "OpenSSH authentication log analyzer and brute-force detection CLI."
 readme = "README.md"
+requires-python = ">=3.12,<3.15"
+license = "MIT"
 authors = [
-    { name = "DanielMR-dev", email = "80842775+DanielMR-dev@users.noreply.github.com" }
+    { name = "Daniel Mira Restrepo" }
 ]
-requires-python = ">=3.14"
+keywords = [
+    "cybersecurity",
+    "blue-team",
+    "soc",
+    "log-analysis",
+    "openssh",
+    "cli",
+]
 dependencies = [
-    "rich>=15.0.0",
-    "typer>=0.27.0",
+    "rich>=15.0.0,<16",
+    "typer>=0.27.0,<1",
 ]
 
 [project.scripts]
-loghunter = "loghunter.cli:main"
+loghunter = "loghunter.cli:run"
 
 [build-system]
 requires = ["uv_build>=0.12.1,<0.13.0"]
@@ -26,3 +35,48 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.16.1",
 ]
+
+[tool.uv.build-backend]
+module-name = "loghunter"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--strict-config",
+    "--strict-markers",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["loghunter"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "B",
+    "UP",
+    "RUF",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = ["src", "tests"]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
