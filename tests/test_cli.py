@@ -7,7 +7,7 @@ from loghunter.cli import app
 runner = CliRunner()
 
 
-def test_help_command_succeds() -> None:
+def test_help_command_succeeds() -> None:
     """The root help command should be available."""
     result = runner.invoke(app, ["--help"])
 
@@ -15,7 +15,7 @@ def test_help_command_succeds() -> None:
     assert "Analyze OpenSSH authentication logs" in result.stdout
 
 
-def test_version_option_succeds() -> None:
+def test_version_option_succeeds() -> None:
     """The version should print the installed version."""
     result = runner.invoke(app, ["--version"])
 

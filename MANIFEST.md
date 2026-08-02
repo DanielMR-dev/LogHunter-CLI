@@ -18,20 +18,13 @@ The Orchestrator also performs repository inspection and implementation planning
 
 ## Skills
 
-- `.opencode/skills/loghunter-pipeline/SKILL.md`
-- `.opencode/skills/python-project-standards/SKILL.md`
-- `.opencode/skills/openssh-log-parsing/SKILL.md`
-- `.opencode/skills/detection-engineering/SKILL.md`
-- `.opencode/skills/cli-contract/SKILL.md`
-- `.opencode/skills/testing-quality/SKILL.md`
-- `.opencode/skills/security-review/SKILL.md`
-
-## Commands
-
-- `.opencode/commands/feature.md`
-- `.opencode/commands/bugfix.md`
-- `.opencode/commands/review.md`
-- `.opencode/commands/verify.md`
+- `.agents/skills/loghunter-pipeline/SKILL.md`
+- `.agents/skills/python-project-standards/SKILL.md`
+- `.agents/skills/openssh-log-parsing/SKILL.md`
+- `.agents/skills/detection-engineering/SKILL.md`
+- `.agents/skills/cli-contract/SKILL.md`
+- `.agents/skills/testing-quality/SKILL.md`
+- `.agents/skills/security-review/SKILL.md`
 
 ## Installation
 

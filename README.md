@@ -348,23 +348,20 @@ This repository includes project-specific instructions, agents, skills, and comm
 ```text
 AGENTS.md
 .opencode/
-├── agents/
-│   ├── loghunter-orchestrator.md
-│   ├── loghunter-developer.md
-│   └── loghunter-reviewer.md
-├── commands/
-│   ├── feature.md
-│   ├── bugfix.md
-│   ├── review.md
-│   └── verify.md
-└── skills/
-    ├── loghunter-pipeline/
-    ├── python-project-standards/
-    ├── openssh-log-parsing/
-    ├── detection-engineering/
-    ├── cli-contract/
-    ├── testing-quality/
-    └── security-review/
+    └── agents/
+        ├── loghunter-orchestrator.md
+        ├── loghunter-developer.md
+        └── loghunter-reviewer.md
+
+.agents/
+    └── skills/
+        ├── loghunter-pipeline/
+        ├── python-project-standards/
+        ├── openssh-log-parsing/
+        ├── detection-engineering/
+        ├── cli-contract/
+        ├── testing-quality/
+        └── security-review/
 ```
 
 The default workflow is:
