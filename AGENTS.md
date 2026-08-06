@@ -175,8 +175,7 @@ The parser treats every input line as untrusted.
 A single-line parser should have a contract equivalent to:
 
 ```python
-def parse_line(line: str, *, line_number: int, year: int) -> AuthEvent | None:
-    ...
+def parse_line(line: str, *, line_number: int, year: int) -> AuthEvent | None: ...
 ```
 
 Rules:

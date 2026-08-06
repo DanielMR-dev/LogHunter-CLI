@@ -11,6 +11,12 @@ _MIN_SOURCE_PORT = 1
 _MAX_SOURCE_PORT = 65_535
 
 
+def _validate_ip_address(value: object) -> None:
+    """Ensure a source address was normalized before model construction."""
+    if not isinstance(value, (IPv4Address, IPv6Address)):
+        raise TypeError("source_ip must be an IPv4Address or IPv6Address")
+
+
 class AuthEventType(StrEnum):
     """Supported normalized OpenSSH authentication event types."""
 
@@ -57,8 +63,7 @@ class AuthEvent:
         if not self.username.strip():
             raise ValueError("username must not be empty")
 
-        if not isinstance(self.source_ip, (IPv4Address, IPv6Address)):
-            raise TypeError("source_ip must be an IPv4Address or IPv6Address")
+        _validate_ip_address(self.source_ip)
 
         if not (_MIN_SOURCE_PORT <= self.source_port <= _MAX_SOURCE_PORT):
             raise ValueError(

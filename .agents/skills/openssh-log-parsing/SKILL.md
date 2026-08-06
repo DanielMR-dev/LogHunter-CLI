@@ -109,8 +109,7 @@ Port rules:
 Recommended shape:
 
 ```python
-def iter_events(path: Path, *, year: int) -> Iterator[AuthEvent]:
-    ...
+def iter_events(path: Path, *, year: int) -> Iterator[AuthEvent]: ...
 ```
 
 The file layer should also account for:

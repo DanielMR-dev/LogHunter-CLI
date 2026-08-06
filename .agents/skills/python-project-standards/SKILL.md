@@ -80,6 +80,7 @@ Preferred pattern:
 ```python
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True, slots=True)
 class Example:
     value: str
