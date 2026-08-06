@@ -90,7 +90,7 @@ def test_event_is_immutable_and_uses_slots() -> None:
     event = make_event()
 
     with pytest.raises(FrozenInstanceError):
-        setattr(event, "username", "admin")
+        event.__setattr__("username", "admin")
 
     assert not hasattr(event, "__dict__")
 
