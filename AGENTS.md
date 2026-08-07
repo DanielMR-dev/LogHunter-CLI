@@ -224,9 +224,9 @@ Minimum summary fields:
 - Parsed lines.
 - Ignored lines.
 - Parser coverage percentage.
-- Failed logins.
+- Failed logins (includes failed passwords for invalid users).
 - Successful logins.
-- Invalid-user events.
+- Standalone invalid-user events (does not double-count failed logins).
 - Unique source addresses.
 - First observed event.
 - Last observed event.
@@ -487,6 +487,7 @@ Agents must load only the skills relevant to the task. They must not perform bro
 | Any multi-agent implementation | `loghunter-pipeline` |
 | Python modules, typing, dependencies | `python-project-standards` |
 | OpenSSH parsing | `openssh-log-parsing` |
+| Deterministic statistics, aggregations, counts | `analysis-engine` |
 | Brute-force or correlation logic | `detection-engineering` |
 | Typer commands, output, exit codes | `cli-contract` |
 | Tests, coverage, CI, packaging checks | `testing-quality` |

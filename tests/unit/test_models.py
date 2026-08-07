@@ -14,6 +14,8 @@ from loghunter.models import (
     AuthMethod,
     IPAddress,
     ParseStats,
+    SourceStats,
+    UsernameStats,
 )
 
 FIXED_TIMESTAMP = datetime(2026, 7, 30, 18, 14, 22)
@@ -319,6 +321,42 @@ def test_analysis_summary_valid_initialization() -> None:
         unique_source_addresses=3,
         first_observed=FIXED_TIMESTAMP,
         last_observed=FIXED_TIMESTAMP,
+        source_stats=(
+            SourceStats(
+                source_ip=ip_address("192.168.1.1"),
+                failed_logins=2,
+                successful_logins=0,
+                invalid_user_events=0,
+                first_observed=FIXED_TIMESTAMP,
+                last_observed=FIXED_TIMESTAMP,
+            ),
+            SourceStats(
+                source_ip=ip_address("192.168.1.2"),
+                failed_logins=0,
+                successful_logins=2,
+                invalid_user_events=0,
+                first_observed=FIXED_TIMESTAMP,
+                last_observed=FIXED_TIMESTAMP,
+            ),
+            SourceStats(
+                source_ip=ip_address("192.168.1.3"),
+                failed_logins=0,
+                successful_logins=0,
+                invalid_user_events=1,
+                first_observed=FIXED_TIMESTAMP,
+                last_observed=FIXED_TIMESTAMP,
+            ),
+        ),
+        username_stats=(
+            UsernameStats(
+                username="admin",
+                failed_logins=2,
+                successful_logins=2,
+                invalid_user_events=1,
+                first_observed=FIXED_TIMESTAMP,
+                last_observed=FIXED_TIMESTAMP,
+            ),
+        ),
     )
 
     assert summary.total_lines == 10
@@ -344,6 +382,8 @@ def test_analysis_summary_valid_zero_initialization() -> None:
         unique_source_addresses=0,
         first_observed=None,
         last_observed=None,
+        source_stats=(),
+        username_stats=(),
     )
 
     assert summary.failed_logins == 0
@@ -372,6 +412,8 @@ def test_analysis_summary_rejects_negative_counts(
             unique_source_addresses=unique,
             first_observed=None,
             last_observed=None,
+            source_stats=(),
+            username_stats=(),
         )
 
 
@@ -389,6 +431,8 @@ def test_analysis_summary_rejects_sum_mismatch() -> None:
             unique_source_addresses=3,
             first_observed=FIXED_TIMESTAMP,
             last_observed=FIXED_TIMESTAMP,
+            source_stats=(),
+            username_stats=(),
         )
 
 
@@ -404,6 +448,8 @@ def test_analysis_summary_rejects_excessive_unique_addresses() -> None:
             unique_source_addresses=6,  # Exceeds parsed_lines (5)
             first_observed=FIXED_TIMESTAMP,
             last_observed=FIXED_TIMESTAMP,
+            source_stats=(),
+            username_stats=(),
         )
 
 
@@ -428,6 +474,8 @@ def test_analysis_summary_rejects_missing_timestamps_for_parsed_events(
             unique_source_addresses=1,
             first_observed=first,
             last_observed=last,
+            source_stats=(),
+            username_stats=(),
         )
 
 
@@ -443,6 +491,8 @@ def test_analysis_summary_rejects_timestamps_for_zero_events() -> None:
             unique_source_addresses=0,
             first_observed=FIXED_TIMESTAMP,
             last_observed=None,
+            source_stats=(),
+            username_stats=(),
         )
 
 
@@ -458,6 +508,8 @@ def test_analysis_summary_rejects_unique_ips_for_zero_events() -> None:
             unique_source_addresses=1,
             first_observed=None,
             last_observed=None,
+            source_stats=(),
+            username_stats=(),
         )
 
 
@@ -478,4 +530,325 @@ def test_analysis_summary_rejects_out_of_order_timestamps() -> None:
             unique_source_addresses=1,
             first_observed=first,
             last_observed=last,
+            source_stats=(),
+            username_stats=(),
+        )
+
+
+def test_source_stats_valid_initialization() -> None:
+    """SourceStats should construct correctly with valid data."""
+    stats = SourceStats(
+        source_ip=FIXED_IPV4,
+        failed_logins=2,
+        successful_logins=1,
+        invalid_user_events=0,
+        first_observed=FIXED_TIMESTAMP,
+        last_observed=FIXED_TIMESTAMP,
+    )
+    assert stats.source_ip == FIXED_IPV4
+    assert stats.failed_logins == 2
+    assert stats.successful_logins == 1
+    assert stats.invalid_user_events == 0
+    assert stats.total_events == 3
+    assert stats.first_observed == FIXED_TIMESTAMP
+    assert stats.last_observed == FIXED_TIMESTAMP
+
+
+def test_source_stats_rejects_invalid_ip() -> None:
+    """SourceStats rejects raw IP strings."""
+    with pytest.raises(TypeError, match="source_ip must be an IPv4Address or IPv6Address"):
+        SourceStats(
+            source_ip=cast(IPAddress, "192.168.1.1"),
+            failed_logins=1,
+            successful_logins=0,
+            invalid_user_events=0,
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=FIXED_TIMESTAMP,
+        )
+
+
+@pytest.mark.parametrize(
+    ("failed", "success", "invalid"),
+    [
+        (-1, 0, 0),
+        (0, -1, 0),
+        (0, 0, -1),
+    ],
+)
+def test_source_stats_rejects_negative_counts(failed: int, success: int, invalid: int) -> None:
+    """SourceStats rejects negative event counts."""
+    with pytest.raises(ValueError, match="cannot be negative"):
+        SourceStats(
+            source_ip=FIXED_IPV4,
+            failed_logins=failed,
+            successful_logins=success,
+            invalid_user_events=invalid,
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=FIXED_TIMESTAMP,
+        )
+
+
+def test_source_stats_rejects_zero_events() -> None:
+    """SourceStats rejects instances with zero total events."""
+    with pytest.raises(ValueError, match="total_events must be at least 1"):
+        SourceStats(
+            source_ip=FIXED_IPV4,
+            failed_logins=0,
+            successful_logins=0,
+            invalid_user_events=0,
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=FIXED_TIMESTAMP,
+        )
+
+
+def test_source_stats_rejects_out_of_order_timestamps() -> None:
+    """SourceStats requires first_observed <= last_observed."""
+    first = datetime(2026, 7, 30, 18, 20)
+    last = datetime(2026, 7, 30, 18, 10)
+    with pytest.raises(
+        ValueError, match="first_observed cannot be strictly greater than last_observed"
+    ):
+        SourceStats(
+            source_ip=FIXED_IPV4,
+            failed_logins=1,
+            successful_logins=0,
+            invalid_user_events=0,
+            first_observed=first,
+            last_observed=last,
+        )
+
+
+def test_username_stats_valid_initialization() -> None:
+    """UsernameStats should construct correctly with valid data."""
+    stats = UsernameStats(
+        username="admin",
+        failed_logins=2,
+        successful_logins=1,
+        invalid_user_events=0,
+        first_observed=FIXED_TIMESTAMP,
+        last_observed=FIXED_TIMESTAMP,
+    )
+    assert stats.username == "admin"
+    assert stats.failed_logins == 2
+    assert stats.successful_logins == 1
+    assert stats.invalid_user_events == 0
+    assert stats.total_events == 3
+    assert stats.first_observed == FIXED_TIMESTAMP
+    assert stats.last_observed == FIXED_TIMESTAMP
+
+
+def test_username_stats_exact_username_preservation() -> None:
+    """UsernameStats should not modify the case of the username."""
+    stats = UsernameStats(
+        username="AdMiN",
+        failed_logins=1,
+        successful_logins=0,
+        invalid_user_events=0,
+        first_observed=FIXED_TIMESTAMP,
+        last_observed=FIXED_TIMESTAMP,
+    )
+    assert stats.username == "AdMiN"
+
+
+@pytest.mark.parametrize("username", ["", "   "])
+def test_username_stats_rejects_empty_username(username: str) -> None:
+    """UsernameStats requires a non-empty username."""
+    with pytest.raises(ValueError, match="username must not be empty"):
+        UsernameStats(
+            username=username,
+            failed_logins=1,
+            successful_logins=0,
+            invalid_user_events=0,
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=FIXED_TIMESTAMP,
+        )
+
+
+def test_username_stats_rejects_negative_counts() -> None:
+    """UsernameStats rejects negative event counts."""
+    with pytest.raises(ValueError, match="cannot be negative"):
+        UsernameStats(
+            username="admin",
+            failed_logins=-1,
+            successful_logins=0,
+            invalid_user_events=0,
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=FIXED_TIMESTAMP,
+        )
+
+
+def test_username_stats_rejects_zero_events() -> None:
+    """UsernameStats rejects instances with zero total events."""
+    with pytest.raises(ValueError, match="total_events must be at least 1"):
+        UsernameStats(
+            username="admin",
+            failed_logins=0,
+            successful_logins=0,
+            invalid_user_events=0,
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=FIXED_TIMESTAMP,
+        )
+
+
+def test_username_stats_rejects_out_of_order_timestamps() -> None:
+    """UsernameStats requires first_observed <= last_observed."""
+    first = datetime(2026, 7, 30, 18, 20)
+    last = datetime(2026, 7, 30, 18, 10)
+    with pytest.raises(
+        ValueError, match="first_observed cannot be strictly greater than last_observed"
+    ):
+        UsernameStats(
+            username="admin",
+            failed_logins=1,
+            successful_logins=0,
+            invalid_user_events=0,
+            first_observed=first,
+            last_observed=last,
+        )
+
+
+def test_analysis_summary_rejects_duplicate_sources() -> None:
+    """AnalysisSummary rejects duplicate source IPs in source_stats."""
+    stats = ParseStats(total_lines=2, parsed_lines=2, ignored_lines=0)
+    source = SourceStats(
+        source_ip=FIXED_IPV4,
+        failed_logins=1,
+        successful_logins=0,
+        invalid_user_events=0,
+        first_observed=FIXED_TIMESTAMP,
+        last_observed=FIXED_TIMESTAMP,
+    )
+    with pytest.raises(ValueError, match="source_stats contains duplicate source IPs"):
+        AnalysisSummary(
+            parse_stats=stats,
+            failed_logins=2,
+            successful_logins=0,
+            invalid_user_events=0,
+            unique_source_addresses=2,
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=FIXED_TIMESTAMP,
+            source_stats=(source, source),
+            username_stats=(),
+        )
+
+
+def test_analysis_summary_rejects_duplicate_usernames() -> None:
+    """AnalysisSummary rejects duplicate usernames in username_stats."""
+    stats = ParseStats(total_lines=2, parsed_lines=2, ignored_lines=0)
+    source = SourceStats(
+        source_ip=FIXED_IPV4,
+        failed_logins=2,
+        successful_logins=0,
+        invalid_user_events=0,
+        first_observed=FIXED_TIMESTAMP,
+        last_observed=FIXED_TIMESTAMP,
+    )
+    username = UsernameStats(
+        username="admin",
+        failed_logins=1,
+        successful_logins=0,
+        invalid_user_events=0,
+        first_observed=FIXED_TIMESTAMP,
+        last_observed=FIXED_TIMESTAMP,
+    )
+    with pytest.raises(ValueError, match="username_stats contains duplicate usernames"):
+        AnalysisSummary(
+            parse_stats=stats,
+            failed_logins=2,
+            successful_logins=0,
+            invalid_user_events=0,
+            unique_source_addresses=1,
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=FIXED_TIMESTAMP,
+            source_stats=(source,),
+            username_stats=(username, username),
+        )
+
+
+def test_analysis_summary_rejects_source_stats_count_mismatch() -> None:
+    """AnalysisSummary validates len(source_stats) == unique_source_addresses."""
+    stats = ParseStats(total_lines=2, parsed_lines=2, ignored_lines=0)
+    source = SourceStats(
+        source_ip=FIXED_IPV4,
+        failed_logins=1,
+        successful_logins=0,
+        invalid_user_events=0,
+        first_observed=FIXED_TIMESTAMP,
+        last_observed=FIXED_TIMESTAMP,
+    )
+    with pytest.raises(
+        ValueError, match="len\\(source_stats\\) must equal unique_source_addresses"
+    ):
+        AnalysisSummary(
+            parse_stats=stats,
+            failed_logins=2,
+            successful_logins=0,
+            invalid_user_events=0,
+            unique_source_addresses=2,  # Expected 1
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=FIXED_TIMESTAMP,
+            source_stats=(source,),
+            username_stats=(),
+        )
+
+
+def test_analysis_summary_rejects_source_stats_sum_mismatch() -> None:
+    """AnalysisSummary validates sum(source.failed_logins) == failed_logins."""
+    stats = ParseStats(total_lines=1, parsed_lines=1, ignored_lines=0)
+    source = SourceStats(
+        source_ip=FIXED_IPV4,
+        failed_logins=0,  # Expected 1
+        successful_logins=1,
+        invalid_user_events=0,
+        first_observed=FIXED_TIMESTAMP,
+        last_observed=FIXED_TIMESTAMP,
+    )
+    with pytest.raises(
+        ValueError, match="source_stats failed_logins sum does not match global count"
+    ):
+        AnalysisSummary(
+            parse_stats=stats,
+            failed_logins=1,
+            successful_logins=0,
+            invalid_user_events=0,
+            unique_source_addresses=1,
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=FIXED_TIMESTAMP,
+            source_stats=(source,),
+            username_stats=(),
+        )
+
+
+def test_analysis_summary_rejects_username_stats_sum_mismatch() -> None:
+    """AnalysisSummary validates sum(username.total_events) == parsed_lines."""
+    stats = ParseStats(total_lines=2, parsed_lines=2, ignored_lines=0)
+    source = SourceStats(
+        source_ip=FIXED_IPV4,
+        failed_logins=2,
+        successful_logins=0,
+        invalid_user_events=0,
+        first_observed=FIXED_TIMESTAMP,
+        last_observed=FIXED_TIMESTAMP,
+    )
+    username = UsernameStats(
+        username="admin",
+        failed_logins=1,  # Only 1 event, expected 2
+        successful_logins=0,
+        invalid_user_events=0,
+        first_observed=FIXED_TIMESTAMP,
+        last_observed=FIXED_TIMESTAMP,
+    )
+    with pytest.raises(
+        ValueError, match="username_stats failed_logins sum does not match global count"
+    ):
+        AnalysisSummary(
+            parse_stats=stats,
+            failed_logins=2,
+            successful_logins=0,
+            invalid_user_events=0,
+            unique_source_addresses=1,
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=FIXED_TIMESTAMP,
+            source_stats=(source,),
+            username_stats=(username,),
         )
