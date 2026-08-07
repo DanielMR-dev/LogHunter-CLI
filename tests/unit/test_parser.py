@@ -18,6 +18,10 @@ VALID_FAILED_PASSWORD_INVALID_USER_LINE = (
     "Failed password for invalid user administrator from 192.168.1.50 port 54322 ssh2"
 )
 
+VALID_INVALID_USER_LINE = (
+    "Jul 30 18:15:02 server01 sshd[4132]: Invalid user administrator from 192.168.1.50 port 54322"
+)
+
 
 def test_parses_failed_password_event() -> None:
     """A supported failed-password record should produce an AuthEvent."""
@@ -61,6 +65,45 @@ def test_parses_failed_password_invalid_user_event() -> None:
     assert event.invalid_user is True
 
 
+def test_parses_standalone_invalid_user_event() -> None:
+    """A standalone invalid user record should produce an AuthEvent with event_type INVALID_USER."""
+    event = parse_line(
+        VALID_INVALID_USER_LINE,
+        line_number=3,
+        year=2026,
+    )
+
+    assert event is not None
+    assert event.timestamp == datetime(2026, 7, 30, 18, 15, 2)
+    assert event.hostname == "server01"
+    assert event.process_id == 4132
+    assert event.event_type is AuthEventType.INVALID_USER
+    assert event.username == "administrator"
+    assert event.source_ip == IPv4Address("192.168.1.50")
+    assert event.source_port == 54322
+    assert event.auth_method is None
+    assert event.line_number == 3
+    assert event.invalid_user is True
+
+
+@pytest.mark.parametrize(
+    "username",
+    [
+        "test-user",
+        "test_user",
+        "test.user",
+    ],
+)
+def test_accepts_valid_username_characters(username: str) -> None:
+    """The parser should preserve usernames containing valid special characters."""
+    line = (
+        f"Jul 30 18:15:02 server01 sshd[4132]: Invalid user {username} from 192.168.1.50 port 54322"
+    )
+    event = parse_line(line, line_number=1, year=2026)
+    assert event is not None
+    assert event.username == username
+
+
 def test_preserves_supplied_line_number() -> None:
     """The parser should preserve one-based source-line traceability."""
     event = parse_line(
@@ -93,13 +136,14 @@ def test_accepts_single_digit_syslog_day() -> None:
 
 
 @pytest.mark.parametrize(
-    "base_line",
+    ("base_line", "expected_type"),
     [
-        VALID_FAILED_PASSWORD_LINE,
-        VALID_FAILED_PASSWORD_INVALID_USER_LINE,
+        (VALID_FAILED_PASSWORD_LINE, AuthEventType.LOGIN_FAILED),
+        (VALID_FAILED_PASSWORD_INVALID_USER_LINE, AuthEventType.LOGIN_FAILED),
+        (VALID_INVALID_USER_LINE, AuthEventType.INVALID_USER),
     ],
 )
-def test_accepts_trailing_newline(base_line: str) -> None:
+def test_accepts_trailing_newline(base_line: str, expected_type: AuthEventType) -> None:
     """Lines read directly from a file may include a newline character."""
     event = parse_line(
         f"{base_line}\n",
@@ -108,8 +152,7 @@ def test_accepts_trailing_newline(base_line: str) -> None:
     )
 
     assert event is not None
-    # Just check it parses successfully
-    assert event.event_type is AuthEventType.LOGIN_FAILED
+    assert event.event_type is expected_type
 
 
 @pytest.mark.parametrize(
@@ -121,6 +164,7 @@ def test_accepts_trailing_newline(base_line: str) -> None:
         "Jul 30 18:14:22 server01 kernel: unrelated message",
         "Jul 30 18:14:22 server01 sshd[4128]: Failed password",
         "Jul 30 18:15:03 server01 sshd[4132]: Failed password for invalid user",
+        "Jul 30 18:15:02 server01 sshd[4132]: Invalid user",
         ("Jan  3 05:04:09 ubuntu sshd[99]Failed password for admin from 10.0.0.5 port 22 ssh2"),
         (
             "Jul 30 18:14:22 server01 sshd[4128]: "
@@ -151,6 +195,14 @@ def test_returns_none_for_unsupported_lines(line: str) -> None:
         (
             "Jul 30 18:15:03 server01 sshd[4132]: "
             "Failed password for invalid user administrator from 999.1.1.1 port 54322 ssh2"
+        ),
+        (
+            "Jul 30 18:15:02 server01 sshd[4132]: "
+            "Invalid user administrator from 999.1.1.1 port 54322"
+        ),
+        (
+            "Jul 30 18:15:02 server01 sshd[4132]: "
+            "Invalid user administrator from 2001:db8::25 port 54322"
         ),
     ],
 )
@@ -184,6 +236,13 @@ def test_returns_none_for_invalid_source_ports(port: int) -> None:
 
     assert parse_line(line_invalid_user, line_number=1, year=2026) is None
 
+    line_standalone_invalid = (
+        "Jul 30 18:15:02 server01 sshd[4132]: "
+        f"Invalid user administrator from 192.168.1.50 port {port}"
+    )
+
+    assert parse_line(line_standalone_invalid, line_number=1, year=2026) is None
+
 
 @pytest.mark.parametrize(
     "line",
@@ -203,6 +262,10 @@ def test_returns_none_for_invalid_source_ports(port: int) -> None:
         (
             "Foo 30 18:15:03 server01 sshd[4132]: "
             "Failed password for invalid user administrator from 192.168.1.50 port 54322 ssh2"
+        ),
+        (
+            "Foo 30 18:15:02 server01 sshd[4132]: "
+            "Invalid user administrator from 192.168.1.50 port 54322"
         ),
     ],
 )
