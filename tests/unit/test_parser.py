@@ -27,6 +27,11 @@ VALID_ACCEPTED_PASSWORD_LINE = (
     "Accepted password for daniel from 192.168.1.25 port 50930 ssh2"
 )
 
+VALID_ACCEPTED_PUBLICKEY_LINE = (
+    "Jul 30 18:20:15 server01 sshd[4200]: "
+    "Accepted publickey for daniel from 192.168.1.25 port 50931 ssh2"
+)
+
 
 def test_parses_failed_password_event() -> None:
     """A supported failed-password record should produce an AuthEvent."""
@@ -112,6 +117,27 @@ def test_parses_accepted_password_event() -> None:
     assert event.invalid_user is False
 
 
+def test_parses_accepted_publickey_event() -> None:
+    """A supported accepted-publickey record should produce an AuthEvent."""
+    event = parse_line(
+        VALID_ACCEPTED_PUBLICKEY_LINE,
+        line_number=5,
+        year=2026,
+    )
+
+    assert event is not None
+    assert event.timestamp == datetime(2026, 7, 30, 18, 20, 15)
+    assert event.hostname == "server01"
+    assert event.process_id == 4200
+    assert event.event_type is AuthEventType.LOGIN_SUCCEEDED
+    assert event.username == "daniel"
+    assert event.source_ip == IPv4Address("192.168.1.25")
+    assert event.source_port == 50931
+    assert event.auth_method is AuthMethod.PUBLIC_KEY
+    assert event.line_number == 5
+    assert event.invalid_user is False
+
+
 @pytest.mark.parametrize(
     "line_template",
     [
@@ -122,6 +148,10 @@ def test_parses_accepted_password_event() -> None:
         (
             "Jul 30 18:20:15 server01 sshd[4200]: "
             "Accepted password for {username} from 192.168.1.25 port 50930 ssh2"
+        ),
+        (
+            "Jul 30 18:20:15 server01 sshd[4200]: "
+            "Accepted publickey for {username} from 192.168.1.25 port 50931 ssh2"
         ),
     ],
 )
@@ -179,6 +209,7 @@ def test_accepts_single_digit_syslog_day() -> None:
         (VALID_FAILED_PASSWORD_INVALID_USER_LINE, AuthEventType.LOGIN_FAILED),
         (VALID_INVALID_USER_LINE, AuthEventType.INVALID_USER),
         (VALID_ACCEPTED_PASSWORD_LINE, AuthEventType.LOGIN_SUCCEEDED),
+        (VALID_ACCEPTED_PUBLICKEY_LINE, AuthEventType.LOGIN_SUCCEEDED),
     ],
 )
 def test_accepts_trailing_newline(base_line: str, expected_type: AuthEventType) -> None:
@@ -206,8 +237,9 @@ def test_accepts_trailing_newline(base_line: str, expected_type: AuthEventType) 
         ("Jan  3 05:04:09 ubuntu sshd[99]Failed password for admin from 10.0.0.5 port 22 ssh2"),
         (
             "Jul 30 18:20:15 server01 sshd[4200]: "
-            "Accepted publickey for daniel from 192.168.1.25 port 50931 ssh2"
+            "Accepted publickey for daniel from 192.168.1.25 port 50931"
         ),
+        ("Jul 30 18:20:15 server01 sshd[4200]: Accepted publickey for daniel"),
     ],
 )
 def test_returns_none_for_unsupported_lines(line: str) -> None:
@@ -249,6 +281,14 @@ def test_returns_none_for_unsupported_lines(line: str) -> None:
         (
             "Jul 30 18:20:15 server01 sshd[4200]: "
             "Accepted password for daniel from 2001:db8::25 port 50930 ssh2"
+        ),
+        (
+            "Jul 30 18:20:15 server01 sshd[4200]: "
+            "Accepted publickey for daniel from 999.1.1.1 port 50931 ssh2"
+        ),
+        (
+            "Jul 30 18:20:15 server01 sshd[4200]: "
+            "Accepted publickey for daniel from 2001:db8::25 port 50931 ssh2"
         ),
     ],
 )
@@ -296,6 +336,13 @@ def test_returns_none_for_invalid_source_ports(port: int) -> None:
 
     assert parse_line(line_accepted_password, line_number=1, year=2026) is None
 
+    line_accepted_publickey = (
+        "Jul 30 18:20:15 server01 sshd[4200]: "
+        f"Accepted publickey for daniel from 192.168.1.25 port {port} ssh2"
+    )
+
+    assert parse_line(line_accepted_publickey, line_number=1, year=2026) is None
+
 
 @pytest.mark.parametrize(
     "line",
@@ -323,6 +370,10 @@ def test_returns_none_for_invalid_source_ports(port: int) -> None:
         (
             "Foo 30 18:20:15 server01 sshd[4200]: "
             "Accepted password for daniel from 192.168.1.25 port 50930 ssh2"
+        ),
+        (
+            "Foo 30 18:20:15 server01 sshd[4200]: "
+            "Accepted publickey for daniel from 192.168.1.25 port 50931 ssh2"
         ),
     ],
 )

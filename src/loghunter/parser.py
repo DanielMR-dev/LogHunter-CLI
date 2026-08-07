@@ -65,6 +65,13 @@ _ACCEPTED_PASSWORD_MESSAGE_PATTERN = re.compile(
     r"ssh2"
 )
 
+_ACCEPTED_PUBLICKEY_MESSAGE_PATTERN = re.compile(
+    r"Accepted publickey for (?P<username>\S+)\s+"
+    r"from (?P<source_ip>\S+)\s+"
+    r"port (?P<source_port>\d+)\s+"
+    r"ssh2"
+)
+
 
 def _validate_arguments(*, line_number: int, year: int) -> None:
     """Validate caller-provided parser configuration"""
@@ -214,6 +221,37 @@ def _parse_accepted_password_message(
         return None
 
 
+def _parse_accepted_publickey_message(
+    envelope: _SyslogEnvelope,
+    *,
+    line_number: int,
+) -> AuthEvent | None:
+    """Parse a successful public-key OpenSSH message."""
+    match = _ACCEPTED_PUBLICKEY_MESSAGE_PATTERN.fullmatch(envelope.message)
+
+    if match is None:
+        return None
+
+    try:
+        source_ip = IPv4Address(match.group("source_ip"))
+        source_port = int(match.group("source_port"))
+
+        return AuthEvent(
+            timestamp=envelope.timestamp,
+            hostname=envelope.hostname,
+            process_id=envelope.process_id,
+            event_type=AuthEventType.LOGIN_SUCCEEDED,
+            username=match.group("username"),
+            source_ip=source_ip,
+            source_port=source_port,
+            auth_method=AuthMethod.PUBLIC_KEY,
+            line_number=line_number,
+            invalid_user=False,
+        )
+    except ValueError:
+        return None
+
+
 def parse_line(
     line: str,
     *,
@@ -254,6 +292,10 @@ def parse_line(
         return event
 
     event = _parse_accepted_password_message(envelope, line_number=line_number)
+    if event is not None:
+        return event
+
+    event = _parse_accepted_publickey_message(envelope, line_number=line_number)
     if event is not None:
         return event
 
