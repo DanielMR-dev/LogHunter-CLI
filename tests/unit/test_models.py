@@ -8,6 +8,7 @@ from typing import cast
 import pytest
 
 from loghunter.models import (
+    AnalysisSummary,
     AuthEvent,
     AuthEventType,
     AuthMethod,
@@ -305,3 +306,176 @@ def test_failed_login_may_target_invalid_user() -> None:
 
     assert event.event_type is AuthEventType.LOGIN_FAILED
     assert event.invalid_user is True
+
+
+def test_analysis_summary_valid_initialization() -> None:
+    """A valid AnalysisSummary should construct correctly."""
+    stats = ParseStats(total_lines=10, parsed_lines=5, ignored_lines=5)
+    summary = AnalysisSummary(
+        parse_stats=stats,
+        failed_logins=2,
+        successful_logins=2,
+        invalid_user_events=1,
+        unique_source_addresses=3,
+        first_observed=FIXED_TIMESTAMP,
+        last_observed=FIXED_TIMESTAMP,
+    )
+
+    assert summary.total_lines == 10
+    assert summary.parsed_lines == 5
+    assert summary.ignored_lines == 5
+    assert summary.parser_coverage_percentage == 50.0
+    assert summary.failed_logins == 2
+    assert summary.successful_logins == 2
+    assert summary.invalid_user_events == 1
+    assert summary.unique_source_addresses == 3
+    assert summary.first_observed == FIXED_TIMESTAMP
+    assert summary.last_observed == FIXED_TIMESTAMP
+
+
+def test_analysis_summary_valid_zero_initialization() -> None:
+    """A valid zero-count AnalysisSummary should construct correctly."""
+    stats = ParseStats(total_lines=10, parsed_lines=0, ignored_lines=10)
+    summary = AnalysisSummary(
+        parse_stats=stats,
+        failed_logins=0,
+        successful_logins=0,
+        invalid_user_events=0,
+        unique_source_addresses=0,
+        first_observed=None,
+        last_observed=None,
+    )
+
+    assert summary.failed_logins == 0
+
+
+@pytest.mark.parametrize(
+    ("failed", "success", "invalid", "unique"),
+    [
+        (-1, 0, 0, 0),
+        (0, -1, 0, 0),
+        (0, 0, -1, 0),
+        (0, 0, 0, -1),
+    ],
+)
+def test_analysis_summary_rejects_negative_counts(
+    failed: int, success: int, invalid: int, unique: int
+) -> None:
+    """AnalysisSummary rejects negative event or IP counts."""
+    stats = ParseStats(total_lines=10, parsed_lines=0, ignored_lines=10)
+    with pytest.raises(ValueError, match="cannot be negative"):
+        AnalysisSummary(
+            parse_stats=stats,
+            failed_logins=failed,
+            successful_logins=success,
+            invalid_user_events=invalid,
+            unique_source_addresses=unique,
+            first_observed=None,
+            last_observed=None,
+        )
+
+
+def test_analysis_summary_rejects_sum_mismatch() -> None:
+    """The sum of categorized events must equal the parsed lines count."""
+    stats = ParseStats(total_lines=10, parsed_lines=5, ignored_lines=5)
+    with pytest.raises(
+        ValueError, match=r"sum of classified events must equal parse_stats\.parsed_lines"
+    ):
+        AnalysisSummary(
+            parse_stats=stats,
+            failed_logins=2,
+            successful_logins=2,
+            invalid_user_events=0,  # Sum is 4, expected 5
+            unique_source_addresses=3,
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=FIXED_TIMESTAMP,
+        )
+
+
+def test_analysis_summary_rejects_excessive_unique_addresses() -> None:
+    """Unique source addresses cannot logically exceed the number of parsed events."""
+    stats = ParseStats(total_lines=10, parsed_lines=5, ignored_lines=5)
+    with pytest.raises(ValueError, match="unique_source_addresses cannot exceed parsed_lines"):
+        AnalysisSummary(
+            parse_stats=stats,
+            failed_logins=2,
+            successful_logins=2,
+            invalid_user_events=1,
+            unique_source_addresses=6,  # Exceeds parsed_lines (5)
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=FIXED_TIMESTAMP,
+        )
+
+
+@pytest.mark.parametrize(
+    ("first", "last"),
+    [
+        (None, FIXED_TIMESTAMP),
+        (FIXED_TIMESTAMP, None),
+    ],
+)
+def test_analysis_summary_rejects_missing_timestamps_for_parsed_events(
+    first: datetime | None, last: datetime | None
+) -> None:
+    """If parsed_lines > 0, first/last observed timestamps must be present."""
+    stats = ParseStats(total_lines=10, parsed_lines=1, ignored_lines=9)
+    with pytest.raises(ValueError, match="first_observed and last_observed must not be None"):
+        AnalysisSummary(
+            parse_stats=stats,
+            failed_logins=1,
+            successful_logins=0,
+            invalid_user_events=0,
+            unique_source_addresses=1,
+            first_observed=first,
+            last_observed=last,
+        )
+
+
+def test_analysis_summary_rejects_timestamps_for_zero_events() -> None:
+    """If parsed_lines == 0, timestamps must be None."""
+    stats = ParseStats(total_lines=10, parsed_lines=0, ignored_lines=10)
+    with pytest.raises(ValueError, match="first_observed and last_observed must be None"):
+        AnalysisSummary(
+            parse_stats=stats,
+            failed_logins=0,
+            successful_logins=0,
+            invalid_user_events=0,
+            unique_source_addresses=0,
+            first_observed=FIXED_TIMESTAMP,
+            last_observed=None,
+        )
+
+
+def test_analysis_summary_rejects_unique_ips_for_zero_events() -> None:
+    """If parsed_lines == 0, unique IPs must be 0."""
+    stats = ParseStats(total_lines=10, parsed_lines=0, ignored_lines=10)
+    with pytest.raises(ValueError, match="unique_source_addresses must be 0"):
+        AnalysisSummary(
+            parse_stats=stats,
+            failed_logins=0,
+            successful_logins=0,
+            invalid_user_events=0,
+            unique_source_addresses=1,
+            first_observed=None,
+            last_observed=None,
+        )
+
+
+def test_analysis_summary_rejects_out_of_order_timestamps() -> None:
+    """first_observed cannot be greater than last_observed."""
+    stats = ParseStats(total_lines=10, parsed_lines=2, ignored_lines=8)
+    first = datetime(2026, 7, 30, 18, 20, 00)
+    last = datetime(2026, 7, 30, 18, 10, 00)  # Before first
+
+    with pytest.raises(
+        ValueError, match="first_observed cannot be strictly greater than last_observed"
+    ):
+        AnalysisSummary(
+            parse_stats=stats,
+            failed_logins=2,
+            successful_logins=0,
+            invalid_user_events=0,
+            unique_source_addresses=1,
+            first_observed=first,
+            last_observed=last,
+        )
