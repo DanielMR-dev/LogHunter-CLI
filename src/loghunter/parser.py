@@ -3,7 +3,7 @@
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from ipaddress import IPv4Address
+from ipaddress import ip_address
 
 from loghunter.models import AuthEvent, AuthEventType, AuthMethod
 
@@ -140,7 +140,7 @@ def _parse_failed_password_message(
         return None
 
     try:
-        source_ip = IPv4Address(match.group("source_ip"))
+        source_ip = ip_address(match.group("source_ip"))
         source_port = int(match.group("source_port"))
 
         return AuthEvent(
@@ -171,7 +171,7 @@ def _parse_invalid_user_message(
         return None
 
     try:
-        source_ip = IPv4Address(match.group("source_ip"))
+        source_ip = ip_address(match.group("source_ip"))
         source_port = int(match.group("source_port"))
 
         return AuthEvent(
@@ -202,7 +202,7 @@ def _parse_accepted_password_message(
         return None
 
     try:
-        source_ip = IPv4Address(match.group("source_ip"))
+        source_ip = ip_address(match.group("source_ip"))
         source_port = int(match.group("source_port"))
 
         return AuthEvent(
@@ -233,7 +233,7 @@ def _parse_accepted_publickey_message(
         return None
 
     try:
-        source_ip = IPv4Address(match.group("source_ip"))
+        source_ip = ip_address(match.group("source_ip"))
         source_port = int(match.group("source_port"))
 
         return AuthEvent(
@@ -260,9 +260,9 @@ def parse_line(
 ) -> AuthEvent | None:
     """Parse one supported OpenSSH authentication log line.
 
-    The first parser iteration supports only failed password
-    and standalone invalid user authentication events using
-    IPv4 source addresses.
+    The parser supports failed password, invalid-user events,
+    accepted password, and accepted publickey authentication events
+    using IPv4 or IPv6 source addresses.
 
     Unsupported or malformed log records return ``None``. Invalid
     caller configuration, such as a non-positive line number or an
