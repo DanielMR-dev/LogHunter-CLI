@@ -1,10 +1,18 @@
 """Parser for supported OpenSSH authentication log records."""
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from ipaddress import ip_address
+from pathlib import Path
 
+from loghunter.exceptions import (
+    EmptyInputFileError,
+    InputFileNotFoundError,
+    InputFileUnreadableError,
+    InputPathNotFileError,
+)
 from loghunter.models import AuthEvent, AuthEventType, AuthMethod
 
 _MIN_YEAR = 1
@@ -73,13 +81,18 @@ _ACCEPTED_PUBLICKEY_MESSAGE_PATTERN = re.compile(
 )
 
 
+def _validate_year(year: int) -> None:
+    """Validate the year parameter."""
+    if not _MIN_YEAR <= year <= _MAX_YEAR:
+        raise ValueError(f"year must be between {_MIN_YEAR} and {_MAX_YEAR}")
+
+
 def _validate_arguments(*, line_number: int, year: int) -> None:
     """Validate caller-provided parser configuration"""
     if line_number < 1:
         raise ValueError("line_number must be greater than zero")
 
-    if not _MIN_YEAR <= year <= _MAX_YEAR:
-        raise ValueError(f"year must be between {_MIN_YEAR} and {_MAX_YEAR}")
+    _validate_year(year)
 
 
 def _build_timestamp(
@@ -302,4 +315,53 @@ def parse_line(
     return None
 
 
-__all__ = ["parse_line"]
+def iter_events(
+    path: Path,
+    *,
+    year: int,
+) -> Iterator[AuthEvent]:
+    """Incrementally stream a local OpenSSH authentication log file into normalized events.
+
+    The file is read incrementally to maintain bounded memory. Only supported and successfully
+    parsed records are yielded. Unsupported lines are ignored.
+
+    Args:
+        path: Path to the regular local log file.
+        year: The year to apply to traditional syslog timestamps.
+
+    Raises:
+        ValueError: If caller configuration (like year) is invalid.
+        InputFileNotFoundError: If the path does not exist.
+        InputPathNotFileError: If the path is not a regular file.
+        EmptyInputFileError: If the file is physically empty (zero bytes).
+        InputFileUnreadableError: If the file cannot be read or is not valid UTF-8.
+    """
+    _validate_year(year)
+
+    if not path.exists():
+        raise InputFileNotFoundError(f"Input path does not exist: {path}")
+
+    if not path.is_file():
+        raise InputPathNotFileError(f"Input path is not a regular file: {path}")
+
+    try:
+        if path.stat().st_size == 0:
+            raise EmptyInputFileError(f"Input file is physically empty: {path}")
+    except OSError as exc:
+        raise InputFileUnreadableError(f"Failed to stat input file {path}: {exc}") from exc
+
+    try:
+        with path.open(encoding="utf-8", errors="strict") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                event = parse_line(line, line_number=line_number, year=year)
+                if event is not None:
+                    yield event
+    except OSError as exc:
+        raise InputFileUnreadableError(f"Failed to read input file {path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise InputFileUnreadableError(
+            f"Failed to decode input file {path} as UTF-8: {exc}"
+        ) from exc
+
+
+__all__ = ["iter_events", "parse_line"]
