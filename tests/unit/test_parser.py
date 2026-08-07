@@ -1,7 +1,7 @@
 """Unit tests for OpenSSH authentication log parsing."""
 
 from datetime import datetime
-from ipaddress import IPv4Address
+from ipaddress import IPv4Address, IPv6Address
 
 import pytest
 
@@ -138,6 +138,94 @@ def test_parses_accepted_publickey_event() -> None:
     assert event.invalid_user is False
 
 
+def test_parses_ipv6_accepted_publickey_event() -> None:
+    """A supported accepted-publickey record with IPv6 should produce an AuthEvent."""
+    line = (
+        "Jul 30 18:20:15 server01 sshd[4200]: "
+        "Accepted publickey for daniel from 2001:db8::25 port 50931 ssh2"
+    )
+    event = parse_line(line, line_number=6, year=2026)
+
+    assert event is not None
+    assert event.timestamp == datetime(2026, 7, 30, 18, 20, 15)
+    assert event.hostname == "server01"
+    assert event.process_id == 4200
+    assert event.event_type is AuthEventType.LOGIN_SUCCEEDED
+    assert event.username == "daniel"
+    assert isinstance(event.source_ip, IPv6Address)
+    assert event.source_ip == IPv6Address("2001:db8::25")
+    assert event.source_port == 50931
+    assert event.auth_method is AuthMethod.PUBLIC_KEY
+    assert event.line_number == 6
+    assert event.invalid_user is False
+
+
+@pytest.mark.parametrize(
+    ("line", "expected_type", "expected_ip", "expected_invalid_user"),
+    [
+        (
+            (
+                "Jul 30 18:14:22 server01 sshd[4128]: "
+                "Failed password for root from 2001:db8::50 port 54321 ssh2"
+            ),
+            AuthEventType.LOGIN_FAILED,
+            IPv6Address("2001:db8::50"),
+            False,
+        ),
+        (
+            (
+                "Jul 30 18:15:03 server01 sshd[4132]: "
+                "Failed password for invalid user administrator from 2001:db8::50 port 54322 ssh2"
+            ),
+            AuthEventType.LOGIN_FAILED,
+            IPv6Address("2001:db8::50"),
+            True,
+        ),
+        (
+            (
+                "Jul 30 18:15:02 server01 sshd[4132]: "
+                "Invalid user administrator from 2001:db8::50 port 54322"
+            ),
+            AuthEventType.INVALID_USER,
+            IPv6Address("2001:db8::50"),
+            True,
+        ),
+        (
+            (
+                "Jul 30 18:20:15 server01 sshd[4200]: "
+                "Accepted password for daniel from 2001:db8::25 port 50930 ssh2"
+            ),
+            AuthEventType.LOGIN_SUCCEEDED,
+            IPv6Address("2001:db8::25"),
+            False,
+        ),
+        (
+            (
+                "Jul 30 18:20:15 server01 sshd[4200]: "
+                "Accepted publickey for daniel from ::1 port 50931 ssh2"
+            ),
+            AuthEventType.LOGIN_SUCCEEDED,
+            IPv6Address("::1"),
+            False,
+        ),
+    ],
+)
+def test_parses_ipv6_for_all_supported_event_families(
+    line: str,
+    expected_type: AuthEventType,
+    expected_ip: IPv6Address,
+    expected_invalid_user: bool,
+) -> None:
+    """IPv6 should be supported natively across all authentication message variants."""
+    event = parse_line(line, line_number=1, year=2026)
+
+    assert event is not None
+    assert isinstance(event.source_ip, IPv6Address)
+    assert event.source_ip == expected_ip
+    assert event.event_type is expected_type
+    assert event.invalid_user is expected_invalid_user
+
+
 @pytest.mark.parametrize(
     "line_template",
     [
@@ -259,10 +347,6 @@ def test_returns_none_for_unsupported_lines(line: str) -> None:
             "Failed password for root from not-an-ip port 54321 ssh2"
         ),
         (
-            "Jul 30 18:14:22 server01 sshd[4128]: "
-            "Failed password for root from 2001:db8::25 port 54321 ssh2"
-        ),
-        (
             "Jul 30 18:15:03 server01 sshd[4132]: "
             "Failed password for invalid user administrator from 999.1.1.1 port 54322 ssh2"
         ),
@@ -271,16 +355,8 @@ def test_returns_none_for_unsupported_lines(line: str) -> None:
             "Invalid user administrator from 999.1.1.1 port 54322"
         ),
         (
-            "Jul 30 18:15:02 server01 sshd[4132]: "
-            "Invalid user administrator from 2001:db8::25 port 54322"
-        ),
-        (
             "Jul 30 18:20:15 server01 sshd[4200]: "
             "Accepted password for daniel from 999.1.1.1 port 50930 ssh2"
-        ),
-        (
-            "Jul 30 18:20:15 server01 sshd[4200]: "
-            "Accepted password for daniel from 2001:db8::25 port 50930 ssh2"
         ),
         (
             "Jul 30 18:20:15 server01 sshd[4200]: "
@@ -288,14 +364,26 @@ def test_returns_none_for_unsupported_lines(line: str) -> None:
         ),
         (
             "Jul 30 18:20:15 server01 sshd[4200]: "
-            "Accepted publickey for daniel from 2001:db8::25 port 50931 ssh2"
+            "Accepted publickey for daniel from 2001:db8:::25 port 50931 ssh2"
+        ),
+        (
+            "Jul 30 18:20:15 server01 sshd[4200]: "
+            "Accepted publickey for daniel from 2001:db8::gg port 50931 ssh2"
+        ),
+        (
+            "Jul 30 18:20:15 server01 sshd[4200]: "
+            "Accepted publickey for daniel from 2001:db8:zzzz::25 port 50931 ssh2"
+        ),
+        (
+            "Jul 30 18:20:15 server01 sshd[4200]: "
+            "Accepted publickey for daniel from 2001:db8::25::1 port 50931 ssh2"
         ),
     ],
 )
 def test_returns_none_for_unsupported_or_invalid_source_addresses(
     line: str,
 ) -> None:
-    """The first parser iteration should accept only valid IPv4 sources."""
+    """The parser should accept only valid IPv4 or IPv6 sources."""
     assert parse_line(line, line_number=1, year=2026) is None
 
 
@@ -342,6 +430,13 @@ def test_returns_none_for_invalid_source_ports(port: int) -> None:
     )
 
     assert parse_line(line_accepted_publickey, line_number=1, year=2026) is None
+
+    line_accepted_publickey_ipv6 = (
+        "Jul 30 18:20:15 server01 sshd[4200]: "
+        f"Accepted publickey for daniel from 2001:db8::25 port {port} ssh2"
+    )
+
+    assert parse_line(line_accepted_publickey_ipv6, line_number=1, year=2026) is None
 
 
 @pytest.mark.parametrize(
