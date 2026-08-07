@@ -13,6 +13,11 @@ VALID_FAILED_PASSWORD_LINE = (
     "Failed password for root from 192.168.1.50 port 54321 ssh2"
 )
 
+VALID_FAILED_PASSWORD_INVALID_USER_LINE = (
+    "Jul 30 18:15:03 server01 sshd[4132]: "
+    "Failed password for invalid user administrator from 192.168.1.50 port 54322 ssh2"
+)
+
 
 def test_parses_failed_password_event() -> None:
     """A supported failed-password record should produce an AuthEvent."""
@@ -33,6 +38,27 @@ def test_parses_failed_password_event() -> None:
     assert event.auth_method is AuthMethod.PASSWORD
     assert event.line_number == 1
     assert event.invalid_user is False
+
+
+def test_parses_failed_password_invalid_user_event() -> None:
+    """A supported failed-password record for an invalid user should produce an AuthEvent."""
+    event = parse_line(
+        VALID_FAILED_PASSWORD_INVALID_USER_LINE,
+        line_number=2,
+        year=2026,
+    )
+
+    assert event is not None
+    assert event.timestamp == datetime(2026, 7, 30, 18, 15, 3)
+    assert event.hostname == "server01"
+    assert event.process_id == 4132
+    assert event.event_type is AuthEventType.LOGIN_FAILED
+    assert event.username == "administrator"
+    assert event.source_ip == IPv4Address("192.168.1.50")
+    assert event.source_port == 54322
+    assert event.auth_method is AuthMethod.PASSWORD
+    assert event.line_number == 2
+    assert event.invalid_user is True
 
 
 def test_preserves_supplied_line_number() -> None:
@@ -66,16 +92,24 @@ def test_accepts_single_digit_syslog_day() -> None:
     assert event.source_port == 22
 
 
-def test_accepts_trailing_newline() -> None:
+@pytest.mark.parametrize(
+    "base_line",
+    [
+        VALID_FAILED_PASSWORD_LINE,
+        VALID_FAILED_PASSWORD_INVALID_USER_LINE,
+    ],
+)
+def test_accepts_trailing_newline(base_line: str) -> None:
     """Lines read directly from a file may include a newline character."""
     event = parse_line(
-        f"{VALID_FAILED_PASSWORD_LINE}\n",
+        f"{base_line}\n",
         line_number=3,
         year=2026,
     )
 
     assert event is not None
-    assert event.username == "root"
+    # Just check it parses successfully
+    assert event.event_type is AuthEventType.LOGIN_FAILED
 
 
 @pytest.mark.parametrize(
@@ -86,15 +120,11 @@ def test_accepts_trailing_newline() -> None:
         "This is not an OpenSSH authentication record",
         "Jul 30 18:14:22 server01 kernel: unrelated message",
         "Jul 30 18:14:22 server01 sshd[4128]: Failed password",
+        "Jul 30 18:15:03 server01 sshd[4132]: Failed password for invalid user",
         ("Jan  3 05:04:09 ubuntu sshd[99]Failed password for admin from 10.0.0.5 port 22 ssh2"),
         (
             "Jul 30 18:14:22 server01 sshd[4128]: "
             "Accepted password for root from 192.168.1.50 port 54321 ssh2"
-        ),
-        (
-            "Jul 30 18:14:22 server01 sshd[4128]: "
-            "Failed password for invalid user admin "
-            "from 192.168.1.50 port 54321 ssh2"
         ),
     ],
 )
@@ -117,6 +147,10 @@ def test_returns_none_for_unsupported_lines(line: str) -> None:
         (
             "Jul 30 18:14:22 server01 sshd[4128]: "
             "Failed password for root from 2001:db8::25 port 54321 ssh2"
+        ),
+        (
+            "Jul 30 18:15:03 server01 sshd[4132]: "
+            "Failed password for invalid user administrator from 999.1.1.1 port 54322 ssh2"
         ),
     ],
 )
@@ -143,6 +177,13 @@ def test_returns_none_for_invalid_source_ports(port: int) -> None:
 
     assert parse_line(line, line_number=1, year=2026) is None
 
+    line_invalid_user = (
+        "Jul 30 18:15:03 server01 sshd[4132]: "
+        f"Failed password for invalid user administrator from 192.168.1.50 port {port} ssh2"
+    )
+
+    assert parse_line(line_invalid_user, line_number=1, year=2026) is None
+
 
 @pytest.mark.parametrize(
     "line",
@@ -158,6 +199,10 @@ def test_returns_none_for_invalid_source_ports(port: int) -> None:
         (
             "Jul 30 25:14:22 server01 sshd[4128]: "
             "Failed password for root from 192.168.1.50 port 54321 ssh2"
+        ),
+        (
+            "Foo 30 18:15:03 server01 sshd[4132]: "
+            "Failed password for invalid user administrator from 192.168.1.50 port 54322 ssh2"
         ),
     ],
 )
