@@ -2,7 +2,7 @@
 
 from dataclasses import FrozenInstanceError
 from datetime import datetime
-from ipaddress import IPv4Address, IPv6Address
+from ipaddress import IPv4Address, IPv6Address, ip_address
 from typing import cast
 
 import pytest
@@ -12,6 +12,7 @@ from loghunter.models import (
     AuthEventType,
     AuthMethod,
     IPAddress,
+    ParseStats,
 )
 
 FIXED_TIMESTAMP = datetime(2026, 7, 30, 18, 14, 22)
@@ -68,11 +69,54 @@ def test_creates_valid_failed_login_event() -> None:
     assert event.process_id == 4128
     assert event.event_type is AuthEventType.LOGIN_FAILED
     assert event.username == "root"
-    assert event.source_ip == IPv4Address("192.168.1.50")
+    assert event.source_ip == ip_address("192.168.1.50")
     assert event.source_port == 54321
     assert event.auth_method is AuthMethod.PASSWORD
     assert event.line_number == 1
     assert event.invalid_user is False
+
+
+def test_parse_stats_valid_initialization() -> None:
+    """ParseStats should initialize cleanly when counts are valid."""
+    stats = ParseStats(total_lines=10, parsed_lines=7, ignored_lines=3)
+    assert stats.total_lines == 10
+    assert stats.parsed_lines == 7
+    assert stats.ignored_lines == 3
+    assert stats.coverage_percentage == pytest.approx(70.0)
+
+
+def test_parse_stats_zero_counts() -> None:
+    """ParseStats with zero total lines should defensively report 0.0% coverage."""
+    stats = ParseStats(total_lines=0, parsed_lines=0, ignored_lines=0)
+    assert stats.coverage_percentage == 0.0
+
+
+def test_parse_stats_100_percent_coverage() -> None:
+    """ParseStats with no ignored lines should report 100.0% coverage."""
+    stats = ParseStats(total_lines=5, parsed_lines=5, ignored_lines=0)
+    assert stats.coverage_percentage == pytest.approx(100.0)
+
+
+@pytest.mark.parametrize(
+    ("total", "parsed", "ignored"),
+    [
+        (-1, 0, 0),
+        (10, -1, 11),
+        (10, 11, -1),
+    ],
+)
+def test_parse_stats_negative_counts_raise_value_error(
+    total: int, parsed: int, ignored: int
+) -> None:
+    """ParseStats should reject negative count values."""
+    with pytest.raises(ValueError, match="cannot be negative"):
+        ParseStats(total_lines=total, parsed_lines=parsed, ignored_lines=ignored)
+
+
+def test_parse_stats_mismatched_totals_raise_value_error() -> None:
+    """ParseStats should reject instances where parsed + ignored != total."""
+    with pytest.raises(ValueError, match="must exactly equal total_lines"):
+        ParseStats(total_lines=10, parsed_lines=5, ignored_lines=4)
 
 
 def test_supports_ipv6_source_addresses() -> None:
