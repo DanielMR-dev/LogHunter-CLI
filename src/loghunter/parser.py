@@ -30,7 +30,7 @@ _FAILED_PASSWORD_PATTERN = re.compile(
     r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})\s+"
     r"(?P<hostname>\S+)\s+"
     r"sshd\[(?P<process_id>\d+)\]:\s+"
-    r"Failed password for (?P<username>\S+)\s+"
+    r"Failed password for (?:(?P<invalid_user>invalid user)\s+)?(?P<username>\S+)\s+"
     r"from (?P<source_ip>\S+)\s+"
     r"port (?P<source_port>\d+)\s+"
     r"ssh2"
@@ -121,7 +121,7 @@ def parse_line(
             source_port=source_port,
             auth_method=AuthMethod.PASSWORD,
             line_number=line_number,
-            invalid_user=False,
+            invalid_user=match.group("invalid_user") is not None,
         )
     except ValueError:
         return None
