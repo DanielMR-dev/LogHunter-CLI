@@ -94,9 +94,37 @@ class AuthEvent:
             raise ValueError("successful login events cannot target an invalid user")
 
 
+@dataclass(frozen=True, slots=True)
+class ParseStats:
+    """Immutable parsing statistics and input-coverage accounting."""
+
+    total_lines: int
+    parsed_lines: int
+    ignored_lines: int
+
+    def __post_init__(self) -> None:
+        """Validate invariant line counts."""
+        if self.total_lines < 0:
+            raise ValueError("total_lines cannot be negative")
+        if self.parsed_lines < 0:
+            raise ValueError("parsed_lines cannot be negative")
+        if self.ignored_lines < 0:
+            raise ValueError("ignored_lines cannot be negative")
+        if self.parsed_lines + self.ignored_lines != self.total_lines:
+            raise ValueError("parsed_lines + ignored_lines must exactly equal total_lines")
+
+    @property
+    def coverage_percentage(self) -> float:
+        """Calculate the percentage of physical lines that were supported/parsed."""
+        if self.total_lines == 0:
+            return 0.0
+        return (self.parsed_lines / self.total_lines) * 100
+
+
 __all__ = [
     "AuthEvent",
     "AuthEventType",
     "AuthMethod",
     "IPAddress",
+    "ParseStats",
 ]

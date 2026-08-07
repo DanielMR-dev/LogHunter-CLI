@@ -13,7 +13,7 @@ from loghunter.exceptions import (
     InputFileUnreadableError,
     InputPathNotFileError,
 )
-from loghunter.models import AuthEvent, AuthEventType, AuthMethod
+from loghunter.models import AuthEvent, AuthEventType, AuthMethod, ParseStats
 
 _MIN_YEAR = 1
 _MAX_YEAR = 9_999
@@ -315,6 +315,38 @@ def parse_line(
     return None
 
 
+def _iter_parse_results(
+    path: Path,
+    *,
+    year: int,
+) -> Iterator[AuthEvent | None]:
+    """Incrementally stream a log file, yielding one result per physical line."""
+    _validate_year(year)
+
+    if not path.exists():
+        raise InputFileNotFoundError(f"Input path does not exist: {path}")
+
+    if not path.is_file():
+        raise InputPathNotFileError(f"Input path is not a regular file: {path}")
+
+    try:
+        if path.stat().st_size == 0:
+            raise EmptyInputFileError(f"Input file is physically empty: {path}")
+    except OSError as exc:
+        raise InputFileUnreadableError(f"Failed to stat input file {path}: {exc}") from exc
+
+    try:
+        with path.open(encoding="utf-8", errors="strict") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                yield parse_line(line, line_number=line_number, year=year)
+    except OSError as exc:
+        raise InputFileUnreadableError(f"Failed to read input file {path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise InputFileUnreadableError(
+            f"Failed to decode input file {path} as UTF-8: {exc}"
+        ) from exc
+
+
 def iter_events(
     path: Path,
     *,
@@ -336,32 +368,46 @@ def iter_events(
         EmptyInputFileError: If the file is physically empty (zero bytes).
         InputFileUnreadableError: If the file cannot be read or is not valid UTF-8.
     """
-    _validate_year(year)
-
-    if not path.exists():
-        raise InputFileNotFoundError(f"Input path does not exist: {path}")
-
-    if not path.is_file():
-        raise InputPathNotFileError(f"Input path is not a regular file: {path}")
-
-    try:
-        if path.stat().st_size == 0:
-            raise EmptyInputFileError(f"Input file is physically empty: {path}")
-    except OSError as exc:
-        raise InputFileUnreadableError(f"Failed to stat input file {path}: {exc}") from exc
-
-    try:
-        with path.open(encoding="utf-8", errors="strict") as handle:
-            for line_number, line in enumerate(handle, start=1):
-                event = parse_line(line, line_number=line_number, year=year)
-                if event is not None:
-                    yield event
-    except OSError as exc:
-        raise InputFileUnreadableError(f"Failed to read input file {path}: {exc}") from exc
-    except UnicodeDecodeError as exc:
-        raise InputFileUnreadableError(
-            f"Failed to decode input file {path} as UTF-8: {exc}"
-        ) from exc
+    for result in _iter_parse_results(path, year=year):
+        if result is not None:
+            yield result
 
 
-__all__ = ["iter_events", "parse_line"]
+def collect_parse_stats(
+    path: Path,
+    *,
+    year: int,
+) -> ParseStats:
+    """Calculate parser statistics and coverage for a local OpenSSH authentication log file.
+
+    The file is read incrementally to maintain bounded memory. It computes statistics based on
+    physical lines parsed vs ignored.
+
+    Args:
+        path: Path to the regular local log file.
+        year: The year to apply to traditional syslog timestamps.
+
+    Raises:
+        ValueError: If caller configuration (like year) is invalid.
+        InputFileNotFoundError: If the path does not exist.
+        InputPathNotFileError: If the path is not a regular file.
+        EmptyInputFileError: If the file is physically empty (zero bytes).
+        InputFileUnreadableError: If the file cannot be read or is not valid UTF-8.
+    """
+    parsed_lines = 0
+    ignored_lines = 0
+
+    for result in _iter_parse_results(path, year=year):
+        if result is not None:
+            parsed_lines += 1
+        else:
+            ignored_lines += 1
+
+    return ParseStats(
+        total_lines=parsed_lines + ignored_lines,
+        parsed_lines=parsed_lines,
+        ignored_lines=ignored_lines,
+    )
+
+
+__all__ = ["collect_parse_stats", "iter_events", "parse_line"]
