@@ -122,6 +122,65 @@ class ParseStats:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceStats:
+    """Immutable aggregation of events for a single source IP address."""
+
+    source_ip: IPAddress
+    failed_logins: int
+    successful_logins: int
+    invalid_user_events: int
+    first_observed: datetime
+    last_observed: datetime
+
+    def __post_init__(self) -> None:
+        _validate_ip_address(self.source_ip)
+        if self.failed_logins < 0:
+            raise ValueError("failed_logins cannot be negative")
+        if self.successful_logins < 0:
+            raise ValueError("successful_logins cannot be negative")
+        if self.invalid_user_events < 0:
+            raise ValueError("invalid_user_events cannot be negative")
+        if self.total_events < 1:
+            raise ValueError("total_events must be at least 1")
+        if self.first_observed > self.last_observed:
+            raise ValueError("first_observed cannot be strictly greater than last_observed")
+
+    @property
+    def total_events(self) -> int:
+        return self.failed_logins + self.successful_logins + self.invalid_user_events
+
+
+@dataclass(frozen=True, slots=True)
+class UsernameStats:
+    """Immutable aggregation of events for a single username."""
+
+    username: str
+    failed_logins: int
+    successful_logins: int
+    invalid_user_events: int
+    first_observed: datetime
+    last_observed: datetime
+
+    def __post_init__(self) -> None:
+        if not self.username.strip():
+            raise ValueError("username must not be empty")
+        if self.failed_logins < 0:
+            raise ValueError("failed_logins cannot be negative")
+        if self.successful_logins < 0:
+            raise ValueError("successful_logins cannot be negative")
+        if self.invalid_user_events < 0:
+            raise ValueError("invalid_user_events cannot be negative")
+        if self.total_events < 1:
+            raise ValueError("total_events must be at least 1")
+        if self.first_observed > self.last_observed:
+            raise ValueError("first_observed cannot be strictly greater than last_observed")
+
+    @property
+    def total_events(self) -> int:
+        return self.failed_logins + self.successful_logins + self.invalid_user_events
+
+
+@dataclass(frozen=True, slots=True)
 class AnalysisSummary:
     """Immutable authentication-analysis summary."""
 
@@ -132,6 +191,8 @@ class AnalysisSummary:
     unique_source_addresses: int
     first_observed: datetime | None
     last_observed: datetime | None
+    source_stats: tuple[SourceStats, ...]
+    username_stats: tuple[UsernameStats, ...]
 
     def __post_init__(self) -> None:
         """Validate summary invariants."""
@@ -166,6 +227,34 @@ class AnalysisSummary:
         if self.unique_source_addresses > self.parse_stats.parsed_lines:
             raise ValueError("unique_source_addresses cannot exceed parsed_lines")
 
+        if len(self.source_stats) != self.unique_source_addresses:
+            raise ValueError("len(source_stats) must equal unique_source_addresses")
+
+        if len({s.source_ip for s in self.source_stats}) != len(self.source_stats):
+            raise ValueError("source_stats contains duplicate source IPs")
+        if len({u.username for u in self.username_stats}) != len(self.username_stats):
+            raise ValueError("username_stats contains duplicate usernames")
+
+        if sum(s.failed_logins for s in self.source_stats) != self.failed_logins:
+            raise ValueError("source_stats failed_logins sum does not match global count")
+        if sum(s.successful_logins for s in self.source_stats) != self.successful_logins:
+            raise ValueError("source_stats successful_logins sum does not match global count")
+        if sum(s.invalid_user_events for s in self.source_stats) != self.invalid_user_events:
+            raise ValueError("source_stats invalid_user_events sum does not match global count")
+
+        if sum(u.failed_logins for u in self.username_stats) != self.failed_logins:
+            raise ValueError("username_stats failed_logins sum does not match global count")
+        if sum(u.successful_logins for u in self.username_stats) != self.successful_logins:
+            raise ValueError("username_stats successful_logins sum does not match global count")
+        if sum(u.invalid_user_events for u in self.username_stats) != self.invalid_user_events:
+            raise ValueError("username_stats invalid_user_events sum does not match global count")
+
+        if self.parse_stats.parsed_lines == 0:
+            if self.source_stats != ():
+                raise ValueError("source_stats must be empty when no events are parsed")
+            if self.username_stats != ():
+                raise ValueError("username_stats must be empty when no events are parsed")
+
     @property
     def total_lines(self) -> int:
         return self.parse_stats.total_lines
@@ -190,4 +279,6 @@ __all__ = [
     "AuthMethod",
     "IPAddress",
     "ParseStats",
+    "SourceStats",
+    "UsernameStats",
 ]
